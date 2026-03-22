@@ -2,6 +2,7 @@
 //  ALPHABOTICS BACKEND — server.js
 //  Stack : Express · Discord OAuth2 · MongoDB · JWT
 //  Author: Alphabotics Platform
+//  Version: 1.1.0
 // ============================================================
 
 require("dotenv").config();
@@ -32,31 +33,27 @@ REQUIRED_ENV.forEach((key) => {
 });
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const PORT             = process.env.PORT || 5000;
-const DISCORD_API      = "https://discord.com/api/v10";
-const DISCORD_CDN      = "https://cdn.discordapp.com";
-const JWT_EXPIRES      = "7d";
-const COOKIE_MAX_AGE   = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
+const PORT           = process.env.PORT || 5000;
+const DISCORD_API    = "https://discord.com/api/v10";
+const DISCORD_CDN    = "https://cdn.discordapp.com";
+const JWT_EXPIRES    = "7d";
+const COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
 // ─── BOT REGISTRY ─────────────────────────────────────────────────────────────
-//  Add every new bot here — backend auto-supports it
+// Add every new bot here — backend auto-supports it
 const BOTS = {
   "alpha-scrim-manager": {
-    id:       process.env.ALPHA_SCRIM_BOT_ID || "YOUR_ALPHA_SCRIM_BOT_ID",
-    name:     "Alpha Scrim Manager",
-    token:    process.env.DISCORD_BOT_TOKEN,   // use separate tokens per bot if needed
+    id:    process.env.ALPHA_SCRIM_BOT_ID || "YOUR_ALPHA_SCRIM_BOT_ID",
+    name:  "Alpha Scrim Manager",
+    token: process.env.DISCORD_BOT_TOKEN,
   },
+  // Add more bots below when ready:
   // "server-spy": {
   //   id:    process.env.SERVER_SPY_BOT_ID,
   //   name:  "ServerSpy",
   //   token: process.env.SERVER_SPY_BOT_TOKEN,
   // },
-  // Add more bots here later — zero backend changes required
 };
-
-console.log("Bot token loaded:", process.env.DISCORD_BOT_TOKEN ? "YES ✅" : "NO ❌");
-console.log("Bot ID loaded:", process.env.ALPHA_SCRIM_BOT_ID ? "YES ✅" : "NO ❌");
-
 
 // ─── MIDDLEWARE ───────────────────────────────────────────────────────────────
 app.use(cors({
@@ -73,37 +70,34 @@ mongoose.connect(process.env.MONGODB_URI)
 
 // ─── SCHEMAS & MODELS ─────────────────────────────────────────────────────────
 
-// User — stores Discord profile
 const UserSchema = new mongoose.Schema({
   discordId:     { type: String, required: true, unique: true },
   username:      { type: String, required: true },
   discriminator: { type: String, default: "0" },
   avatar:        { type: String, default: null },
   email:         { type: String, default: null },
-  accessToken:   { type: String },   // Discord access token
-  refreshToken:  { type: String },   // Discord refresh token
+  accessToken:   { type: String },
+  refreshToken:  { type: String },
   createdAt:     { type: Date, default: Date.now },
   lastLogin:     { type: Date, default: Date.now },
 });
 const User = mongoose.model("User", UserSchema);
 
-// Guild — stores server info per user
 const GuildSchema = new mongoose.Schema({
-  userId:    { type: String, required: true },   // Discord user ID
-  guildId:   { type: String, required: true },
-  name:      { type: String, required: true },
-  icon:      { type: String, default: null },
-  isOwner:   { type: Boolean, default: false },
-  botPresent:{ type: Boolean, default: false },  // is any Alphabotics bot in this server?
-  updatedAt: { type: Date, default: Date.now },
+  userId:     { type: String, required: true },
+  guildId:    { type: String, required: true },
+  name:       { type: String, required: true },
+  icon:       { type: String, default: null },
+  isOwner:    { type: Boolean, default: false },
+  botPresent: { type: Boolean, default: false },
+  updatedAt:  { type: Date, default: Date.now },
 });
 GuildSchema.index({ userId: 1, guildId: 1 }, { unique: true });
 const Guild = mongoose.model("Guild", GuildSchema);
 
-// BotSession — tracks which bot + server a user is managing
 const BotSessionSchema = new mongoose.Schema({
   userId:    { type: String, required: true },
-  botId:     { type: String, required: true },   // e.g. "alpha-scrim-manager"
+  botId:     { type: String, required: true },
   guildId:   { type: String, required: true },
   guildName: { type: String },
   startedAt: { type: Date, default: Date.now },
@@ -111,53 +105,20 @@ const BotSessionSchema = new mongoose.Schema({
 });
 const BotSession = mongoose.model("BotSession", BotSessionSchema);
 
-
-// GET /bots/:botId/info
-// Fetches real bot name and avatar from Discord
-app.get("/bots/:botId/info", async (req, res) => {
-  const bot = BOTS[req.params.botId];
-  if (!bot) return res.status(404).json({ error: "Bot not found" });
-
-  try {
-    const response = await axios.get(`${DISCORD_API}/users/@me`, {
-      headers: { Authorization: `Bot ${bot.token}` },
-    });
-
-    const botData = response.data;
-    const avatarUrl = botData.avatar
-      ? `https://cdn.discordapp.com/avatars/${botData.id}/${botData.avatar}.png?size=256`
-      : null;
-
-    res.json({
-      id:       botData.id,
-      name:     botData.username,
-      avatar:   avatarUrl,
-      tag:      botData.discriminator,
-    });
-  } catch (err) {
-  console.error("Bot info error full:", err.response?.data || err.message);
-  console.error("Bot info status:", err.response?.status);
-  res.status(500).json({ 
-    error: "Failed to fetch bot info",
-    details: err.response?.data || err.message,
-    status: err.response?.status
-  });
-}
-});
-
-// ActivityLog — logs every notable action
 const ActivityLogSchema = new mongoose.Schema({
   userId:    { type: String, required: true },
   guildId:   { type: String, default: null },
   botId:     { type: String, default: null },
   type:      {
     type: String,
-    enum: ["login","logout","bot_selected","server_selected","bot_invited",
-           "command_used","scrim_created","scrim_joined","match_scheduled",
-           "role_updated","settings_changed","invite_generated"],
+    enum: [
+      "login", "logout", "bot_selected", "server_selected", "bot_invited",
+      "command_used", "scrim_created", "scrim_joined", "match_scheduled",
+      "role_updated", "settings_changed", "invite_generated",
+    ],
     required: true,
   },
-  meta:      { type: mongoose.Schema.Types.Mixed, default: {} },  // extra details
+  meta:      { type: mongoose.Schema.Types.Mixed, default: {} },
   ip:        { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
 });
@@ -165,7 +126,6 @@ const ActivityLog = mongoose.model("ActivityLog", ActivityLogSchema);
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
-// Log an activity event
 async function logActivity(userId, type, meta = {}, guildId = null, botId = null, ip = null) {
   try {
     await ActivityLog.create({ userId, type, meta, guildId, botId, ip });
@@ -174,12 +134,10 @@ async function logActivity(userId, type, meta = {}, guildId = null, botId = null
   }
 }
 
-// Generate a signed JWT
 function signToken(payload) {
   return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: JWT_EXPIRES });
 }
 
-// Verify JWT from cookie or Authorization header
 function verifyToken(req) {
   const token =
     req.cookies?.token ||
@@ -189,7 +147,6 @@ function verifyToken(req) {
   catch { return null; }
 }
 
-// Auth middleware — attach user to request
 function requireAuth(req, res, next) {
   const payload = verifyToken(req);
   if (!payload) return res.status(401).json({ error: "Unauthorized — please login again" });
@@ -197,13 +154,11 @@ function requireAuth(req, res, next) {
   next();
 }
 
-// Get guild icon URL
 function guildIconUrl(guildId, icon) {
   if (!icon) return null;
   return `${DISCORD_CDN}/icons/${guildId}/${icon}.png`;
 }
 
-// Exchange Discord code for tokens
 async function exchangeCode(code) {
   const params = new URLSearchParams({
     client_id:     process.env.DISCORD_CLIENT_ID,
@@ -215,10 +170,9 @@ async function exchangeCode(code) {
   const res = await axios.post(`${DISCORD_API}/oauth2/token`, params, {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
   });
-  return res.data; // { access_token, refresh_token, expires_in, token_type }
+  return res.data;
 }
 
-// Fetch Discord user profile
 async function fetchDiscordUser(accessToken) {
   const res = await axios.get(`${DISCORD_API}/users/@me`, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -226,26 +180,73 @@ async function fetchDiscordUser(accessToken) {
   return res.data;
 }
 
-// Fetch user's guilds from Discord
 async function fetchDiscordGuilds(accessToken) {
   const res = await axios.get(`${DISCORD_API}/users/@me/guilds`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  return res.data; // array of guild objects
+  return res.data;
 }
 
-// Check if a specific bot is in a guild using the bot token
 async function checkBotInGuild(botToken, guildId) {
   try {
     await axios.get(`${DISCORD_API}/guilds/${guildId}`, {
       headers: { Authorization: `Bot ${botToken}` },
     });
-    return true;  // bot is in the guild
+    return true;
   } catch (err) {
     if (err.response?.status === 403 || err.response?.status === 404) return false;
     throw err;
   }
 }
+
+// ─── BOT INFO SMART CACHE ─────────────────────────────────────────────────────
+// Fetches bot info ONCE on startup — never hammers Discord API again!
+// Auto refreshes every 24 hours
+// Manual refresh: /bots/:botId/refresh?secret=YOUR_REFRESH_SECRET
+
+const botInfoCache = {};
+
+async function loadBotInfo(botId = null) {
+  const botsToLoad = botId
+    ? { [botId]: BOTS[botId] }
+    : BOTS;
+
+  for (const [id, bot] of Object.entries(botsToLoad)) {
+    if (!bot || !bot.token) {
+      console.error(`❌  No token for bot: ${id}`);
+      continue;
+    }
+    try {
+      const response = await axios.get(`${DISCORD_API}/users/@me`, {
+        headers: { Authorization: `Bot ${bot.token}` },
+      });
+      const botData = response.data;
+      botInfoCache[id] = {
+        id:       botData.id,
+        name:     botData.username,
+        avatar:   botData.avatar
+          ? `${DISCORD_CDN}/avatars/${botData.id}/${botData.avatar}.png?size=256`
+          : null,
+        cachedAt: Date.now(),
+      };
+      console.log(`✅  Bot info loaded: ${botData.username}`);
+    } catch (err) {
+      console.error(`❌  Failed to load bot info for ${id}:`, err.response?.status, err.message);
+      if (botInfoCache[id]) {
+        console.log(`⚠️   Using old cache for ${id}`);
+      }
+    }
+  }
+}
+
+// Load once on server startup
+loadBotInfo();
+
+// Auto refresh every 24 hours
+setInterval(() => {
+  console.log("🔄  Refreshing bot info cache...");
+  loadBotInfo();
+}, 24 * 60 * 60 * 1000);
 
 // ─── ROUTES ───────────────────────────────────────────────────────────────────
 
@@ -254,13 +255,12 @@ app.get("/", (req, res) => {
   res.json({
     status:  "ok",
     service: "Alphabotics API",
-    version: "1.0.0",
+    version: "1.1.0",
     bots:    Object.keys(BOTS),
   });
 });
 
 // ── AUTH: Redirect to Discord OAuth2 ─────────────────────────────────────────
-//  GET /auth/login?bot=alpha-scrim-manager
 app.get("/auth/login", (req, res) => {
   const { bot } = req.query;
   const state = bot ? Buffer.from(JSON.stringify({ bot })).toString("base64") : "";
@@ -277,28 +277,21 @@ app.get("/auth/login", (req, res) => {
 });
 
 // ── AUTH: Discord OAuth2 Callback ────────────────────────────────────────────
-//  GET /auth/callback?code=xxx&state=xxx
 app.get("/auth/callback", async (req, res) => {
   const { code, state, error } = req.query;
 
-  // User denied OAuth
   if (error) {
     return res.redirect(`${process.env.FRONTEND_URL}?error=access_denied`);
   }
-
   if (!code) {
     return res.redirect(`${process.env.FRONTEND_URL}?error=no_code`);
   }
 
   try {
-    // 1. Exchange code for Discord tokens
-    const tokens = await exchangeCode(code);
-
-    // 2. Fetch Discord user profile
+    const tokens      = await exchangeCode(code);
     const discordUser = await fetchDiscordUser(tokens.access_token);
 
-    // 3. Upsert user in MongoDB
-    const user = await User.findOneAndUpdate(
+    await User.findOneAndUpdate(
       { discordId: discordUser.id },
       {
         discordId:     discordUser.id,
@@ -313,25 +306,20 @@ app.get("/auth/callback", async (req, res) => {
       { upsert: true, new: true }
     );
 
-    // 4. Log login activity
     await logActivity(
-      discordUser.id,
-      "login",
+      discordUser.id, "login",
       { username: discordUser.username, source: "discord_oauth" },
-      null, null,
-      req.ip
+      null, null, req.ip
     );
 
-    // 5. Decode state to get selected bot
     let botId = null;
     if (state) {
       try {
         const decoded = JSON.parse(Buffer.from(state, "base64").toString());
         botId = decoded.bot || null;
-      } catch { /* ignore bad state */ }
+      } catch { /* ignore */ }
     }
 
-    // 6. Sign JWT
     const token = signToken({
       userId:        discordUser.id,
       username:      discordUser.username,
@@ -339,7 +327,6 @@ app.get("/auth/callback", async (req, res) => {
       avatar:        discordUser.avatar,
     });
 
-    // 7. Set HTTP-only cookie
     res.cookie("token", token, {
       httpOnly: true,
       secure:   process.env.NODE_ENV === "production",
@@ -347,26 +334,19 @@ app.get("/auth/callback", async (req, res) => {
       maxAge:   COOKIE_MAX_AGE,
     });
 
-    // 8. Redirect to frontend with botId if present
     const redirectUrl = botId
-      ? `${process.env.FRONTEND_URL}/dashboard?bot=${botId}`
-      : `${process.env.FRONTEND_URL}/dashboard`;
+      ? `${process.env.FRONTEND_URL}?bot=${botId}`
+      : process.env.FRONTEND_URL;
 
     res.redirect(redirectUrl);
 
   } catch (err) {
-    console.error("OAuth callback error:", err.message?.data || err.message);
-    console.error("0Auth callback status:", err.response?.status);
-    console.error("OAuth callback config:", {
-      client_id: process.env.DISCORD_CLIENT_ID,
-      redirect_uri: process.env.DISCORD_REDIRECT_URI,
-    });
-    res.redirect(`${process.env.FRONTEND_URL}?error=${err.response?.data?.error || "oauth_failed"}`);
+    console.error("OAuth callback error:", err.response?.data || err.message);
+    res.redirect(`${process.env.FRONTEND_URL}?error=oauth_failed`);
   }
 });
 
 // ── AUTH: Get current logged-in user ─────────────────────────────────────────
-//  GET /auth/me
 app.get("/auth/me", requireAuth, async (req, res) => {
   try {
     const user = await User.findOne({ discordId: req.user.userId }).select("-accessToken -refreshToken");
@@ -391,7 +371,6 @@ app.get("/auth/me", requireAuth, async (req, res) => {
 });
 
 // ── AUTH: Logout ──────────────────────────────────────────────────────────────
-//  POST /auth/logout
 app.post("/auth/logout", requireAuth, async (req, res) => {
   await logActivity(req.user.userId, "logout", {}, null, null, req.ip);
   res.clearCookie("token");
@@ -399,45 +378,39 @@ app.post("/auth/logout", requireAuth, async (req, res) => {
 });
 
 // ── GUILDS: Get user's servers ────────────────────────────────────────────────
-//  GET /guilds
 app.get("/guilds", requireAuth, async (req, res) => {
   try {
     const user = await User.findOne({ discordId: req.user.userId });
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    // Fetch guilds from Discord
-    const discordGuilds = await fetchDiscordGuilds(user.accessToken);
-
-    // Filter: only guilds where user has Manage Server (permission bit 32)
+    const discordGuilds    = await fetchDiscordGuilds(user.accessToken);
     const manageableGuilds = discordGuilds.filter(
       (g) => (parseInt(g.permissions) & 0x20) !== 0 || g.owner
     );
 
-    // Save/update guilds in MongoDB
     const guildDocs = await Promise.all(
       manageableGuilds.map((g) =>
         Guild.findOneAndUpdate(
           { userId: req.user.userId, guildId: g.id },
           {
-            userId:     req.user.userId,
-            guildId:    g.id,
-            name:       g.name,
-            icon:       g.icon,
-            isOwner:    g.owner || false,
-            updatedAt:  new Date(),
+            userId:    req.user.userId,
+            guildId:   g.id,
+            name:      g.name,
+            icon:      g.icon,
+            isOwner:   g.owner || false,
+            updatedAt: new Date(),
           },
           { upsert: true, new: true }
         )
       )
     );
 
-    // Return formatted list
     res.json({
       guilds: guildDocs.map((g) => ({
-        id:       g.guildId,
-        name:     g.name,
-        icon:     guildIconUrl(g.guildId, g.icon),
-        isOwner:  g.isOwner,
+        id:      g.guildId,
+        name:    g.name,
+        icon:    guildIconUrl(g.guildId, g.icon),
+        isOwner: g.isOwner,
       })),
     });
 
@@ -450,36 +423,50 @@ app.get("/guilds", requireAuth, async (req, res) => {
   }
 });
 
+// ── BOTS: Get real bot info from cache (zero Discord API calls!) ──────────────
+app.get("/bots/:botId/info", (req, res) => {
+  const info = botInfoCache[req.params.botId];
+  if (!info) {
+    return res.status(404).json({ error: "Bot info not loaded yet — try again in a moment" });
+  }
+  res.json(info);
+});
+
+// ── BOTS: Manual refresh after changing bot name/avatar on Discord ────────────
+// Usage: https://alphabotics.onrender.com/bots/alpha-scrim-manager/refresh?secret=YOUR_SECRET
+app.get("/bots/:botId/refresh", async (req, res) => {
+  if (req.query.secret !== process.env.REFRESH_SECRET) {
+    return res.status(401).json({ error: "Unauthorized — wrong secret" });
+  }
+  await loadBotInfo(req.params.botId);
+  res.json({
+    success: true,
+    message: "Bot info refreshed!",
+    data:    botInfoCache[req.params.botId] || null,
+  });
+});
+
 // ── BOTS: Check if a bot is in a specific server ──────────────────────────────
-//  GET /bots/:botId/check/:guildId
 app.get("/bots/:botId/check/:guildId", requireAuth, async (req, res) => {
   const { botId, guildId } = req.params;
-
-  // Validate bot exists in registry
   const bot = BOTS[botId];
   if (!bot) return res.status(404).json({ error: `Bot "${botId}" not found in registry` });
 
   try {
     const present = await checkBotInGuild(bot.token, guildId);
 
-    // Update guild record in MongoDB
     await Guild.findOneAndUpdate(
       { userId: req.user.userId, guildId },
       { botPresent: present, updatedAt: new Date() }
     );
 
-    // Log the check
     await logActivity(
-      req.user.userId,
-      "server_selected",
+      req.user.userId, "server_selected",
       { botId, guildId, botPresent: present },
-      guildId,
-      botId,
-      req.ip
+      guildId, botId, req.ip
     );
 
     if (present) {
-      // Create or update bot session
       await BotSession.findOneAndUpdate(
         { userId: req.user.userId, botId, guildId },
         { lastSeen: new Date(), guildName: req.query.guildName || "" },
@@ -503,7 +490,6 @@ app.get("/bots/:botId/check/:guildId", requireAuth, async (req, res) => {
 });
 
 // ── BOTS: Get all registered bots ────────────────────────────────────────────
-//  GET /bots
 app.get("/bots", (req, res) => {
   res.json({
     bots: Object.entries(BOTS).map(([id, b]) => ({
@@ -514,19 +500,15 @@ app.get("/bots", (req, res) => {
   });
 });
 
-// ── BOTS: Generate invite link for a bot ─────────────────────────────────────
-//  GET /bots/:botId/invite
+// ── BOTS: Generate invite link ────────────────────────────────────────────────
 app.get("/bots/:botId/invite", requireAuth, async (req, res) => {
   const bot = BOTS[req.params.botId];
   if (!bot) return res.status(404).json({ error: "Bot not found" });
 
   await logActivity(
-    req.user.userId,
-    "invite_generated",
+    req.user.userId, "invite_generated",
     { botId: req.params.botId, botName: bot.name },
-    req.query.guildId || null,
-    req.params.botId,
-    req.ip
+    req.query.guildId || null, req.params.botId, req.ip
   );
 
   res.json({
@@ -535,34 +517,23 @@ app.get("/bots/:botId/invite", requireAuth, async (req, res) => {
 });
 
 // ── DASHBOARD: Stats for a bot in a guild ────────────────────────────────────
-//  GET /dashboard/:botId/:guildId/stats
 app.get("/dashboard/:botId/:guildId/stats", requireAuth, async (req, res) => {
   const { botId, guildId } = req.params;
   if (!BOTS[botId]) return res.status(404).json({ error: "Bot not found" });
 
   try {
-    // Count activity logs for this guild
-    const totalCommands = await ActivityLog.countDocuments({ guildId, botId });
-    const todayStart    = new Date(); todayStart.setHours(0,0,0,0);
-    const commandsToday = await ActivityLog.countDocuments({
-      guildId, botId, createdAt: { $gte: todayStart },
-    });
+    const totalCommands  = await ActivityLog.countDocuments({ guildId, botId });
+    const todayStart     = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const commandsToday  = await ActivityLog.countDocuments({ guildId, botId, createdAt: { $gte: todayStart } });
     const activeSessions = await BotSession.countDocuments({ botId, guildId });
 
-    res.json({
-      totalCommands,
-      commandsToday,
-      activeSessions,
-      botId,
-      guildId,
-    });
+    res.json({ totalCommands, commandsToday, activeSessions, botId, guildId });
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch stats" });
   }
 });
 
-// ── ACTIVITY: Get recent activity for a guild ─────────────────────────────────
-//  GET /activity/:guildId?limit=20
+// ── ACTIVITY: Get recent activity ─────────────────────────────────────────────
 app.get("/activity/:guildId", requireAuth, async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 20, 100);
   try {
@@ -570,7 +541,6 @@ app.get("/activity/:guildId", requireAuth, async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean();
-
     res.json({ activity: logs });
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch activity" });
@@ -578,12 +548,11 @@ app.get("/activity/:guildId", requireAuth, async (req, res) => {
 });
 
 // ── ACTIVITY: Log a custom event from frontend ────────────────────────────────
-//  POST /activity/log
 app.post("/activity/log", requireAuth, async (req, res) => {
   const { type, guildId, botId, meta } = req.body;
   const allowed = [
-    "command_used","scrim_created","scrim_joined","match_scheduled",
-    "role_updated","settings_changed",
+    "command_used", "scrim_created", "scrim_joined", "match_scheduled",
+    "role_updated", "settings_changed",
   ];
   if (!allowed.includes(type)) {
     return res.status(400).json({ error: "Invalid activity type" });
@@ -592,10 +561,8 @@ app.post("/activity/log", requireAuth, async (req, res) => {
   res.json({ success: true });
 });
 
-// ── SETTINGS: Get bot settings for a guild ────────────────────────────────────
-//  GET /settings/:botId/:guildId
+// ── SETTINGS: Get bot settings ────────────────────────────────────────────────
 app.get("/settings/:botId/:guildId", requireAuth, async (req, res) => {
-  // Placeholder — connect to your bot's own settings collection later
   res.json({
     botId:   req.params.botId,
     guildId: req.params.guildId,
