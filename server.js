@@ -107,6 +107,34 @@ const BotSessionSchema = new mongoose.Schema({
 });
 const BotSession = mongoose.model("BotSession", BotSessionSchema);
 
+
+// GET /bots/:botId/info
+// Fetches real bot name and avatar from Discord
+app.get("/bots/:botId/info", async (req, res) => {
+  const bot = BOTS[req.params.botId];
+  if (!bot) return res.status(404).json({ error: "Bot not found" });
+
+  try {
+    const response = await axios.get(`${DISCORD_API}/users/@me`, {
+      headers: { Authorization: `Bot ${bot.token}` },
+    });
+
+    const botData = response.data;
+    const avatarUrl = botData.avatar
+      ? `https://cdn.discordapp.com/avatars/${botData.id}/${botData.avatar}.png?size=256`
+      : null;
+
+    res.json({
+      id:       botData.id,
+      name:     botData.username,
+      avatar:   avatarUrl,
+      tag:      botData.discriminator,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch bot info" });
+  }
+});
+
 // ActivityLog — logs every notable action
 const ActivityLogSchema = new mongoose.Schema({
   userId:    { type: String, required: true },
