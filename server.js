@@ -317,8 +317,13 @@ app.get("/auth/callback", async (req, res) => {
     res.redirect(redirectUrl);
 
   } catch (err) {
-    console.error("OAuth callback error:", err.message);
-    res.redirect(`${process.env.FRONTEND_URL}?error=oauth_failed`);
+    console.error("OAuth callback error:", err.message?.data || err.message);
+    console.error("0Auth callback status:", err.response?.status);
+    console.error("OAuth callback config:", {
+      client_id: process.env.DISCORD_CLIENT_ID,
+      redirect_uri: process.env.DISCORD_REDIRECT_URI,
+    });
+    res.redirect(`${process.env.FRONTEND_URL}?error=${err.response?.data?.error || "oauth_failed"}`);
   }
 });
 
