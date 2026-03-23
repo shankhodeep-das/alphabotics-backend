@@ -998,7 +998,6 @@ app.use((err, req, res, next) => {
 
 // ─── START ────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  log("success", `Alphabotics API running on port ${PORT} in ${process.env.NODE_ENV||"development"} mode`);
-  log("info", `Monitor dashboard: http://localhost:${PORT}`);
-  log("info", `Registered bots: ${Object.keys(BOTS).join(", ")}`);
+  console.log("✅  Alphabotics API is running on port " + PORT);
+  console.log("✅  Mode: " + (process.env.NODE_ENV || "development"));
 });
