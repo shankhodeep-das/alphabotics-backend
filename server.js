@@ -1029,3 +1029,6 @@ app.listen(PORT, () => {
   log("info", `Monitor dashboard: http://localhost:${PORT}`);
   log("info", `Registered bots: ${Object.keys(BOTS).join(", ")}`);
 });
+
+
+module.export = app;
